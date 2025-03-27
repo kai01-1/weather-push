@@ -1,0 +1,8 @@
+{
+  "app_id": "${{ secrets.APP_ID }}",
+  "app_secret": "${{ secrets.APP_SECRET }}",
+  "template_id": "${{ secrets.TEMPLATE_ID }}",
+  "user": ["${{ secrets.USER_ID }}"],
+  "weather_token": "d4af1f233754455fbd808aea8f879b34",
+  "city": "郑州"
+}
