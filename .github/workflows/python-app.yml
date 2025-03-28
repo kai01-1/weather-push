@@ -1,0 +1,30 @@
+name: Weather Push
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 0:00 运行（北京时间 8:00）
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run weather push
+      env:
+        TZ: Asia/Shanghai
+        CORPID: ${{ secrets.CORPID }}
+        CORPSECRET: ${{ secrets.CORPSECRET }}
+        AGENTID: ${{ secrets.AGENTID }}
+      run: python work_wechat.py 
