@@ -90,19 +90,28 @@ def get_ciba():
 
 def get_access_token(corpid, corpsecret):
     url = f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corpid}&corpsecret={corpsecret}"
-    response = requests.get(url)
-    result = response.json()
-    if result["errcode"] != 0:
-        print(f"获取 access_token 失败: {result}")
-        if result["errcode"] == 60020:
-            print("请先在企业微信管理后台设置可信域名")
-            print("1. 进入应用管理")
-            print("2. 找到您的应用")
-            print("3. 点击'设置接收消息服务器URL'")
-            print("4. 填写一个域名（如：https://example.com）")
-            print("5. 保存后再设置 IP 白名单")
+    try:
+        response = requests.get(url)
+        result = response.json()
+        if result["errcode"] != 0:
+            print(f"获取 access_token 失败: {result}")
+            if result["errcode"] == 60020:
+                print("\n请在企业微信管理后台进行以下设置：")
+                print("1. 进入应用管理")
+                print("2. 找到您的应用")
+                print("3. 点击'设置接收消息服务器URL'")
+                print("4. 填写一个域名（如：https://kai01-1.github.io/weather-push/）")
+                print("5. 点击'保存'")
+                print("6. 在同一个页面找到'IP白名单'")
+                print("7. 添加以下 IP：")
+                print("   - 42.236.235.233")
+                print("   - 或者添加 '0.0.0.0' 来允许所有 IP 访问（测试时可以这样做）")
+                print("\n当前 IP: 42.236.235.233")
+            return None
+        return result["access_token"]
+    except Exception as e:
+        print(f"请求失败: {str(e)}")
         return None
-    return result["access_token"]
 
 def send_message(access_token, agentid, city_name, today_date, today_weather, now, today_wind, tomorrow,
                  tomorrow_weather, tomorrow_max, tomorrow_min, tomorrow_wind, note_ch, note_en):
@@ -155,15 +164,17 @@ def send_message(access_token, agentid, city_name, today_date, today_weather, no
                 print("推送消息成功")
                 return
             elif result["errcode"] == 60020:
-                print(f"IP 访问受限，请在企业微信管理后台设置可信域名和 IP 白名单")
-                print(f"当前 IP: {result.get('ip', '未知')}")
-                print("请按以下步骤操作：")
+                print(f"\nIP 访问受限，请在企业微信管理后台进行以下设置：")
                 print("1. 进入应用管理")
                 print("2. 找到您的应用")
                 print("3. 点击'设置接收消息服务器URL'")
-                print("4. 填写一个域名（如：https://example.com）")
-                print("5. 保存后再设置 IP 白名单")
-                print("6. 添加 IP: 42.236.235.233")
+                print("4. 填写一个域名（如：https://kai01-1.github.io/weather-push/）")
+                print("5. 点击'保存'")
+                print("6. 在同一个页面找到'IP白名单'")
+                print("7. 添加以下 IP：")
+                print("   - 42.236.235.233")
+                print("   - 或者添加 '0.0.0.0' 来允许所有 IP 访问（测试时可以这样做）")
+                print(f"\n当前 IP: {result.get('ip', '未知')}")
                 return
             else:
                 print(f"推送消息失败: {result}")
