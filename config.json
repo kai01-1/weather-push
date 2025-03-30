@@ -2,7 +2,9 @@
     "qywx": {
         "corpid": "wwbd1a3d5c0ff54fa4",
         "corpsecret": "45AZEb6fRruKKxpbBIl2VQSDTtX2twprciM4pZX4stE",
-        "agentid": 1000003
+        "agentid": 1000003,
+        "token": "NO9kHTgPpL845YikgC",
+        "encoding_aes_key": "GkHTeGXvJO0vwF5SeGJdxsp5yrA6waoRHVJPRoEdPss"
     },
     "weather": {
         "api_key": "d4af1f233754455fbd808aea8f879b34",

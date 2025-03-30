@@ -6,6 +6,16 @@ import sys
 import bs4
 from time import localtime
 import time
+import hashlib
+import base64
+from Crypto.Cipher import AES
+import xml.etree.ElementTree as ET
+import random
+import string
+from urllib.parse import unquote
+from flask import Flask, request, make_response
+
+app = Flask(__name__)
 
 def get_weather():
     city_name = '郑州'
@@ -86,139 +96,149 @@ def get_ciba():
     r = requests.get(url, headers=headers)
     note_en = r.json()["content"]
     note_ch = r.json()["note"]
-    return note_ch, note_en
+    return note_ch,note_en
 
-def get_access_token(corpid, corpsecret):
-    url = f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corpid}&corpsecret={corpsecret}"
-    try:
-        response = requests.get(url)
-        result = response.json()
-        if result["errcode"] != 0:
-            print(f"获取 access_token 失败: {result}")
-            if result["errcode"] == 60020:
-                print("\n请在企业微信管理后台进行以下设置：")
-                print("1. 进入应用管理")
-                print("2. 找到您的应用")
-                print("3. 点击'设置接收消息服务器URL'")
-                print("4. 填写一个域名（如：https://kai01-1.github.io/weather-push/）")
-                print("5. 点击'保存'")
-                print("6. 在同一个页面找到'IP白名单'")
-                print("7. 添加以下 IP：")
-                print("   - 42.236.235.233")
-                print("   - 或者添加 '0.0.0.0' 来允许所有 IP 访问（测试时可以这样做）")
-                print("\n当前 IP: 42.236.235.233")
-            return None
-        return result["access_token"]
-    except Exception as e:
-        print(f"请求失败: {str(e)}")
-        return None
-
-def send_message(access_token, agentid, city_name, today_date, today_weather, now, today_wind, tomorrow,
-                 tomorrow_weather, tomorrow_max, tomorrow_min, tomorrow_wind, note_ch, note_en):
-    if not access_token:
-        print("无法获取 access_token，推送失败")
-        return
+class WeChatWork:
+    def __init__(self):
+        # 企业微信配置
+        self.corpid = "wwbd1a3d5c0ff54fa4"
+        self.corpsecret = "45AZEb6fRruKKxpbBIl2VQSDTtX2twprciM4pZX4stE"
+        self.agentid = "1000003"
+        self.token = "NO9kHTgPpL845YikgC"
+        self.encoding_aes_key = "GkHTeGXvJO0vwF5SeGJdxsp5yrA6waoRHVJPRoEdPss"
         
-    url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}"
-    
-    week_list = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
-    year = localtime().tm_year
-    month = localtime().tm_mon
-    day = localtime().tm_mday
-    today = datetime.date(datetime(year=year, month=month, day=day))
-    week = week_list[today.isoweekday() % 7]
+        # 获取访问令牌
+        self.access_token = self.get_access_token()
+        if not self.access_token:
+            raise Exception("配置错误: 无法获取访问令牌")
 
-    message = f"""🌅 今天是 {today} {week}
-📍 我现在在 {city_name}
-📅 {today_date} 天气 {today_weather}
-🌡️ 当前温度 {now}
-💨 风力 {today_wind}
+    def get_access_token(self):
+        """获取访问令牌"""
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={self.corpid}&corpsecret={self.corpsecret}"
+        try:
+            response = requests.get(url)
+            result = response.json()
+            print(f"获取访问令牌响应: {result}")
+            if result.get("errcode") == 0:
+                return result.get("access_token")
+            else:
+                print(f"获取访问令牌失败: {result.get('errmsg')}")
+                return None
+        except Exception as e:
+            print(f"获取访问令牌异常: {str(e)}")
+            return None
 
-📅 明天 {tomorrow} 的天气是 {tomorrow_weather}
-⬆️ 最高温度 {tomorrow_max}
-⬇️ 最低温度 {tomorrow_min}
-💨 风力 {tomorrow_wind}
+    def verify_signature(self, msg_signature, timestamp, nonce):
+        """验证签名"""
+        sorted_list = sorted([self.token, timestamp, nonce])
+        signature = hashlib.sha1(''.join(sorted_list).encode()).hexdigest()
+        return signature == msg_signature
 
-💡 今日英语：
-{note_en}
-{note_ch}"""
+    def decrypt_message(self, encrypted_message):
+        """解密消息"""
+        try:
+            aes_key = base64.b64decode(self.encoding_aes_key + "=")
+            cipher = AES.new(aes_key, AES.MODE_CBC, aes_key[:16])
+            decrypted = cipher.decrypt(base64.b64decode(encrypted_message))
+            return decrypted.decode('utf-8')
+        except Exception as e:
+            print(f"解密错误: {str(e)}")
+            return None
 
-    data = {
-        "touser": "@all",
-        "msgtype": "text",
-        "agentid": agentid,
-        "text": {
-            "content": message
+    def encrypt_message(self, message):
+        """加密消息"""
+        try:
+            aes_key = base64.b64decode(self.encoding_aes_key + "=")
+            cipher = AES.new(aes_key, AES.MODE_CBC, aes_key[:16])
+            encrypted = cipher.encrypt(message.encode())
+            return base64.b64encode(encrypted).decode()
+        except Exception as e:
+            print(f"加密错误: {str(e)}")
+            return None
+
+    def handle_callback(self, msg_signature, timestamp, nonce, echostr):
+        """处理回调验证"""
+        try:
+            # URL decode 参数
+            msg_signature = unquote(msg_signature)
+            timestamp = unquote(timestamp)
+            nonce = unquote(nonce)
+            echostr = unquote(echostr)
+
+            # 验证签名
+            if not self.verify_signature(msg_signature, timestamp, nonce):
+                return None
+
+            # 解密消息
+            decrypted_msg = self.decrypt_message(echostr)
+            return decrypted_msg
+
+        except Exception as e:
+            print(f"回调处理错误: {str(e)}")
+            return None
+
+    def send_message(self, user_id, content):
+        """发送消息"""
+        if not self.access_token:
+            return False
+            
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={self.access_token}"
+        data = {
+            "touser": user_id,
+            "msgtype": "text",
+            "agentid": self.agentid,
+            "text": {
+                "content": content
+            }
         }
-    }
-
-    # 添加重试机制
-    max_retries = 3
-    retry_count = 0
-    while retry_count < max_retries:
         try:
             response = requests.post(url, json=data)
             result = response.json()
+            print(f"发送消息响应: {result}")
             
-            if result["errcode"] == 0:
-                print("推送消息成功")
-                return
-            elif result["errcode"] == 60020:
-                print(f"\nIP 访问受限，请在企业微信管理后台进行以下设置：")
-                print("1. 进入应用管理")
-                print("2. 找到您的应用")
-                print("3. 点击'设置接收消息服务器URL'")
-                print("4. 填写一个域名（如：https://kai01-1.github.io/weather-push/）")
-                print("5. 点击'保存'")
-                print("6. 在同一个页面找到'IP白名单'")
-                print("7. 添加以下 IP：")
-                print("   - 42.236.235.233")
-                print("   - 或者添加 '0.0.0.0' 来允许所有 IP 访问（测试时可以这样做）")
-                print(f"\n当前 IP: {result.get('ip', '未知')}")
-                return
-            else:
-                print(f"推送消息失败: {result}")
-                retry_count += 1
-                if retry_count < max_retries:
-                    print(f"将在 5 秒后重试... ({retry_count}/{max_retries})")
-                    time.sleep(5)
-                else:
-                    print("达到最大重试次数，推送失败")
+            if result.get("errcode") == 60020:
+                print("IP 访问受限，请在企业微信管理后台添加 IP 白名单")
+                print(f"当前 IP: {result.get('from_ip')}")
+                return False
+            
+            return result.get("errcode") == 0
         except Exception as e:
-            print(f"发生错误: {str(e)}")
-            retry_count += 1
-            if retry_count < max_retries:
-                print(f"将在 5 秒后重试... ({retry_count}/{max_retries})")
-                time.sleep(5)
-            else:
-                print("达到最大重试次数，推送失败")
+            print(f"发送消息异常: {str(e)}")
+            return False
 
-def main():
-    try:
-        # 从环境变量获取配置
-        corpid = os.getenv("CORPID")
-        corpsecret = os.getenv("CORPSECRET")
-        agentid = os.getenv("AGENTID")
+# 创建全局企业微信实例
+wechat = WeChatWork()
+
+@app.route('/', methods=['GET', 'POST'])
+def handle_request():
+    if request.method == 'GET':
+        # 处理验证请求
+        msg_signature = request.args.get('msg_signature', '')
+        timestamp = request.args.get('timestamp', '')
+        nonce = request.args.get('nonce', '')
+        echostr = request.args.get('echostr', '')
         
-        if not all([corpid, corpsecret, agentid]):
-            raise ValueError("缺少必要的配置信息")
-            
-    except Exception as e:
-        print(f"配置错误: {str(e)}")
-        sys.exit(1)
-
-    # 获取accessToken
-    access_token = get_access_token(corpid, corpsecret)
+        decrypted_msg = wechat.handle_callback(msg_signature, timestamp, nonce, echostr)
+        if decrypted_msg:
+            return decrypted_msg
+        return "验证失败"
     
-    # 获取天气信息
-    city_name, today_date, today_weather, now, today_wind, tomorrow, tomorrow_weather, tomorrow_max, tomorrow_min, tomorrow_wind = get_weather()
-    
-    # 获取每日一句英语
-    note_ch, note_en = get_ciba()
-    
-    # 发送消息
-    send_message(access_token, agentid, city_name, today_date, today_weather, now, today_wind, tomorrow,
-                 tomorrow_weather, tomorrow_max, tomorrow_min, tomorrow_wind, note_ch, note_en)
+    elif request.method == 'POST':
+        # 处理消息接收
+        msg_signature = request.args.get('msg_signature', '')
+        timestamp = request.args.get('timestamp', '')
+        nonce = request.args.get('nonce', '')
+        
+        xml_data = request.data
+        root = ET.fromstring(xml_data)
+        encrypt = root.find('Encrypt').text
+        
+        decrypted_msg = wechat.handle_callback(msg_signature, timestamp, nonce, encrypt)
+        if decrypted_msg:
+            # 这里可以处理接收到的消息
+            print(f"收到消息: {decrypted_msg}")
+            return "success"
+        return "处理失败"
 
 if __name__ == "__main__":
-    main() 
+    app.run(host='0.0.0.0', port=5000) 
